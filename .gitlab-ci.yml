@@ -1,0 +1,50 @@
+image: docker:latest
+
+services:
+  - mongo:latest
+  - name: docker:dind
+    entrypoint: ["env", "-u", "DOCKER_HOST"]
+    command: ["dockerd-entrypoint.sh"]
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive 
+  AWS_ACCESS_KEY_ID: AKIAXMMZ4GN6M7D2TLYI
+  AWS_SECRET_ACCESS_KEY: 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
+  AWS_DEFAULT_REGION: us-east-1
+  REPOSITORY_URL_API: 507665724284.dkr.ecr.us-east-1.amazonaws.com/ezops-test-marcos
+ 
+  CLUSTER: ezops-test-marcos
+  
+  SERVICE: ezops
+
+  DOCKER_HOST: tcp://docker:2375/
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+
+stages:
+  - build
+build:
+  stage: build
+  before_script:
+    - apk add --update --no-cache python3 && ln -sf python3 /usr/bin/python
+    - python3 -m ensurepip
+    - pip3 install --no-cache --upgrade pip setuptools
+    - pip install awscli
+    - echo "Authenticating on AWS..."
+    - aws configure set aws_access_key_id "AKIAXMMZ4GN6M7D2TLYI"
+    - aws configure set aws_secret_access_key "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"
+    - aws configure set region "us-east-1"
+    - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $REPOSITORY_URL_API
+    - echo "Authenticatication completed."
+  script:
+    - echo "Building image..."
+    - docker build -t $REPOSITORY_URL_API:latest ./ 
+    - echo "Pushing image..."
+    - docker push $REPOSITORY_URL_API:latest
+    - echo "Updating the service..."
+    - aws ecs update-service --region ${AWS_DEFAULT_REGION} --cluster ${CLUSTER} --service ${SERVICE} --force-new-deployment
+    - echo "Deployment done"
+  only:
+    refs:
+      - tags
+      - master
